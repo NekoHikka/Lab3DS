@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="uk">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Blockchain</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font-family: monospace;
+        max-width: 900px;
+        margin: 30px auto;
+        padding: 0 20px;
+        background: #fff;
+        color: #000;
+        font-size: 14px;
+      }
+      h1 {
+        font-size: 1.4em;
+        margin-bottom: 20px;
+      }
+      h2 {
+        font-size: 1em;
+        margin: 24px 0 8px;
+        border-bottom: 1px solid #ccc;
+        padding-bottom: 4px;
+      }
+      input,
+      select {
+        font-family: monospace;
+        font-size: 14px;
+        padding: 5px 8px;
+        border: 1px solid #999;
+      }
+      button {
+        font-family: monospace;
+        font-size: 14px;
+        padding: 5px 14px;
+        cursor: pointer;
+        margin-left: 6px;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 8px;
+        flex-wrap: wrap;
+      }
+      .log {
+        background: #f6f6f6;
+        border: 1px solid #ccc;
+        padding: 10px;
+        margin-top: 8px;
+        max-height: 140px;
+        overflow-y: auto;
+        font-size: 12px;
+      }
+      .log .ok {
+        color: #080;
+      }
+      .log .err {
+        color: #c00;
+      }
+      .log .inf {
+        color: #00a;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        margin-top: 8px;
+        font-size: 12px;
+      }
+      th,
+      td {
+        border: 1px solid #ccc;
+        padding: 4px 8px;
+        text-align: left;
+        word-break: break-all;
+      }
+      th {
+        background: #f0f0f0;
+      }
+      .chain {
+        margin-top: 8px;
+      }
+      .block {
+        border: 1px solid #999;
+        padding: 10px;
+        margin-bottom: 8px;
+        font-size: 12px;
+      }
+      .block .bhead {
+        font-weight: bold;
+        margin-bottom: 6px;
+      }
+      .block .bhash {
+        color: #555;
+      }
+      details summary {
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Blockchain</h1>
+
+    <h2>Акаунти</h2>
+    <div class="row">
+      <input id="accName" placeholder="Ім'я акаунту" style="width: 180px" />
+      <button onclick="ui.createAccount()">Створити акаунт</button>
+    </div>
+    <table id="accTable">
+      <tr>
+        <th>Ім'я</th>
+        <th>ID (pubKey)</th>
+        <th>Баланс</th>
+        <th></th>
+      </tr>
+    </table>
+
+    <h2>Транзакція</h2>
+    <div class="row">
+      <label>Від:</label>
+      <select id="txFrom" style="width: 160px"></select>
+      <label>Кому:</label>
+      <select id="txTo" style="width: 160px"></select>
+      <label>Сума:</label>
+      <input
+        id="txAmount"
+        type="number"
+        min="1"
+        value="10"
+        style="width: 70px"
+      />
+      <button onclick="ui.sendTx()">Відправити</button>
+    </div>
+
+    <h2>Pending транзакції</h2>
+    <table id="pendingTable">
+      <tr>
+        <th>TX ID</th>
+        <th>Від</th>
+        <th>Кому</th>
+        <th>Сума</th>
+        <th>Підпис</th>
+      </tr>
+    </table>
+    <div class="row" style="margin-top: 8px">
+      <button onclick="ui.mineBlock()">Додати блок (mine)</button>
+    </div>
+
+    <h2>Ланцюжок блоків</h2>
+    <div class="chain" id="chain"></div>
+
+    <h2>Лог</h2>
+    <div class="log" id="log"></div>
+
+    <script>
+      "use strict";
+
+      function leftrot(n, s) {
+        return ((n << s) | (n >>> (32 - s))) >>> 0;
+      }
+      function toHex32(n) {
+        return (n >>> 0).toString(16).padStart(8, "0");
+      }
+      function sha1(message) {
+        let h0 = 0x67452301,
+          h1 = 0xefcdab89,
+          h2 = 0x98badcfe,
+          h3 = 0x10325476,
+          h4 = 0xc3d2e1f0;
+        const bytes = new TextEncoder().encode(message);
+        const ml = bytes.length * 8;
+        let msg = [...bytes];
+        msg.push(0x80);
+        while (msg.length % 64 !== 56) msg.push(0x00);
+        for (let i = 7; i >= 0; i--) msg.push((ml / Math.pow(2, i * 8)) & 0xff);
+        for (let chunk = 0; chunk < msg.length / 64; chunk++) {
+          const w = new Array(80);
+          for (let i = 0; i < 16; i++) {
+            w[i] =
+              ((msg[chunk * 64 + i * 4] << 24) |
+                (msg[chunk * 64 + i * 4 + 1] << 16) |
+                (msg[chunk * 64 + i * 4 + 2] << 8) |
+                msg[chunk * 64 + i * 4 + 3]) >>>
+              0;
+          }
+          for (let i = 16; i < 80; i++)
+            w[i] = leftrot(w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16], 1);
+          let a = h0,
+            b = h1,
+            c = h2,
+            d = h3,
+            e = h4;
+          for (let i = 0; i < 80; i++) {
+            let f, k;
+            if (i < 20) {
+              f = ((b & c) | (~b & d)) >>> 0;
+              k = 0x5a827999;
+            } else if (i < 40) {
+              f = (b ^ c ^ d) >>> 0;
+              k = 0x6ed9eba1;
+            } else if (i < 60) {
+              f = ((b & c) | (b & d) | (c & d)) >>> 0;
+              k = 0x8f1bbcdc;
+            } else {
+              f = (b ^ c ^ d) >>> 0;
+              k = 0xca62c1d6;
+            }
+            const temp = (leftrot(a, 5) + f + e + k + w[i]) >>> 0;
+            e = d;
+            d = c;
+            c = leftrot(b, 30);
+            b = a;
+            a = temp;
+          }
+          h0 = (h0 + a) >>> 0;
+          h1 = (h1 + b) >>> 0;
+          h2 = (h2 + c) >>> 0;
+          h3 = (h3 + d) >>> 0;
+          h4 = (h4 + e) >>> 0;
+        }
+        return (
+          toHex32(h0) + toHex32(h1) + toHex32(h2) + toHex32(h3) + toHex32(h4)
+        );
+      }
+
+      class Hash {
+        static toSHA1(data) {
+          return sha1(String(data));
+        }
+      }
+
+      class KeyPair {
+        constructor() {
+          this.privateKey = Array.from({ length: 8 }, () =>
+            Math.floor(Math.random() * 0xffffffff)
+              .toString(16)
+              .padStart(8, "0"),
+          ).join("");
+          this.publicKey = Hash.toSHA1("pub:" + this.privateKey);
+        }
+        static genKeyPair() {
+          return new KeyPair();
+        }
+      }
+
+      class Signature {
+        static signData(privateKey, message) {
+          return Hash.toSHA1(privateKey + ":" + message);
+        }
+        static verifySignature(signature, publicKey, message, privateKey) {
+          return Hash.toSHA1(privateKey + ":" + message) === signature;
+        }
+      }
+
+      class Account {
+        constructor(name) {
+          this.name = name;
+          this.wallet = [];
+          this.balance = 0;
+          const kp = KeyPair.genKeyPair();
+          this.wallet.push(kp);
+          this.accountID = kp.publicKey;
+        }
+        static genAccount(name) {
+          return new Account(name);
+        }
+        addKeyPairToWallet() {
+          this.wallet.push(KeyPair.genKeyPair());
+        }
+        updateBalance(delta) {
+          this.balance += delta;
+        }
+        getBalance() {
+          return this.balance;
+        }
+        signData(message, keyIndex = 0) {
+          return Signature.signData(this.wallet[keyIndex].privateKey, message);
+        }
+        createPaymentOp(receiver, amount, keyIndex = 0) {
+          return Operation.createOperation(this, receiver, amount, keyIndex);
+        }
+      }
+
+      class Operation {
+        constructor(sender, receiver, amount, signature) {
+          this.sender = sender;
+          this.receiver = receiver;
+          this.amount = amount;
+          this.signature = signature;
+        }
+        static createOperation(sender, receiver, amount, keyIndex = 0) {
+          const msg = sender.accountID + receiver.accountID + amount;
+          const sig = sender.signData(msg, keyIndex);
+          return new Operation(sender, receiver, amount, sig);
+        }
+        verifyOperation() {
+          if (this.amount <= 0) return false;
+          if (this.sender.getBalance() < this.amount) return false;
+          const msg =
+            this.sender.accountID + this.receiver.accountID + this.amount;
+          return Signature.verifySignature(
+            this.signature,
+            this.sender.accountID,
+            msg,
+            this.sender.wallet[0].privateKey,
+          );
+        }
+      }
+
+      class Transaction {
+        constructor(operations, nonce) {
+          this.setOfOperations = operations;
+          this.nonce = nonce;
+          const data =
+            operations
+              .map(
+                (o) =>
+                  o.sender.accountID +
+                  o.receiver.accountID +
+                  o.amount +
+                  o.signature,
+              )
+              .join("") + nonce;
+          this.transactionID = Hash.toSHA1(data);
+        }
+        static createTransaction(operations, nonce) {
+          return new Transaction(operations, nonce);
+        }
+      }
+
+      class Block {
+        constructor(transactions, prevHash) {
+          this.setOfTransactions = transactions;
+          this.prevHash = prevHash;
+          const data =
+            transactions.map((t) => t.transactionID).join("") +
+            prevHash +
+            Date.now();
+          this.blockID = Hash.toSHA1(data);
+        }
+        static createBlock(transactions, prevHash) {
+          return new Block(transactions, prevHash);
+        }
+      }
+
+      class Blockchain {
+        constructor() {
+          this.coinDatabase = {};
+          this.blockHistory = [];
+          this.txDatabase = new Set();
+          this.faucetCoins = 1000;
+          this.initBlockchain();
+        }
+        initBlockchain() {
+          const genesis = new Block(
+            [],
+            "0000000000000000000000000000000000000000",
+          );
+          this.blockHistory.push(genesis);
+        }
+        getTokenFromFaucet(account, amount = 50) {
+          if (this.faucetCoins < amount) return false;
+          this.faucetCoins -= amount;
+          account.updateBalance(amount);
+          if (!this.coinDatabase[account.accountID])
+            this.coinDatabase[account.accountID] = 0;
+          this.coinDatabase[account.accountID] += amount;
+          return true;
+        }
+        validateBlock(block) {
+          const last = this.blockHistory[this.blockHistory.length - 1];
+          if (block.prevHash !== last.blockID)
+            return { ok: false, msg: "Невірне посилання на попередній блок" };
+          for (const tx of block.setOfTransactions) {
+            if (this.txDatabase.has(tx.transactionID))
+              return {
+                ok: false,
+                msg: "Транзакція вже є в історії: " + tx.transactionID,
+              };
+          }
+          const tempBalances = { ...this.coinDatabase };
+          for (const tx of block.setOfTransactions) {
+            for (const op of tx.setOfOperations) {
+              if (!op.verifyOperation())
+                return { ok: false, msg: "Невірна операція або підпис" };
+              const bal = tempBalances[op.sender.accountID] || 0;
+              if (bal < op.amount)
+                return {
+                  ok: false,
+                  msg: "Недостатньо коштів у " + op.sender.name,
+                };
+              tempBalances[op.sender.accountID] = bal - op.amount;
+              if (!tempBalances[op.receiver.accountID])
+                tempBalances[op.receiver.accountID] = 0;
+              tempBalances[op.receiver.accountID] += op.amount;
+            }
+          }
+          for (const tx of block.setOfTransactions) {
+            for (const op of tx.setOfOperations) {
+              this.coinDatabase[op.sender.accountID] =
+                (this.coinDatabase[op.sender.accountID] || 0) - op.amount;
+              this.coinDatabase[op.receiver.accountID] =
+                (this.coinDatabase[op.receiver.accountID] || 0) + op.amount;
+              op.sender.updateBalance(-op.amount);
+              op.receiver.updateBalance(op.amount);
+            }
+            this.txDatabase.add(tx.transactionID);
+          }
+          this.blockHistory.push(block);
+          return { ok: true };
+        }
+        getLastHash() {
+          return this.blockHistory[this.blockHistory.length - 1].blockID;
+        }
+        getCoinDatabase() {
+          return this.coinDatabase;
+        }
+      }
+
+      const bc = new Blockchain();
+      const accounts = {};
+      let pendingTxs = [];
+      let nonce = 0;
+
+      const ui = {
+        createAccount() {
+          const name = document.getElementById("accName").value.trim();
+          if (!name) return log("Введіть ім'я", "err");
+          if (accounts[name]) return log("Акаунт вже існує", "err");
+          const acc = Account.genAccount(name);
+          accounts[name] = acc;
+          bc.coinDatabase[acc.accountID] = 0;
+          log(
+            `Акаунт створено: ${name} (${acc.accountID.slice(0, 12)}...)`,
+            "ok",
+          );
+          document.getElementById("accName").value = "";
+          this.render();
+        },
+
+        faucet(name) {
+          const acc = accounts[name];
+          const ok = bc.getTokenFromFaucet(acc, 100);
+          if (ok)
+            log(
+              `${name} отримав 100 монет з faucet. Баланс: ${acc.getBalance()}`,
+              "ok",
+            );
+          else log("Faucet порожній", "err");
+          this.render();
+        },
+
+        sendTx() {
+          const fromName = document.getElementById("txFrom").value;
+          const toName = document.getElementById("txTo").value;
+          const amount = parseInt(document.getElementById("txAmount").value);
+          if (!fromName || !toName) return log("Виберіть акаунти", "err");
+          if (fromName === toName)
+            return log("Відправник і отримувач однакові", "err");
+          if (!amount || amount <= 0) return log("Невірна сума", "err");
+          const sender = accounts[fromName];
+          const receiver = accounts[toName];
+          if (sender.getBalance() < amount)
+            return log(
+              `Недостатньо коштів у ${fromName} (баланс: ${sender.getBalance()})`,
+              "err",
+            );
+          const op = Operation.createOperation(sender, receiver, amount);
+          const tx = Transaction.createTransaction([op], ++nonce);
+          pendingTxs.push(tx);
+          log(
+            `TX створено: ${fromName} → ${toName}, ${amount} монет. TX ID: ${tx.transactionID.slice(0, 12)}...`,
+            "inf",
+          );
+          this.render();
+        },
+
+        mineBlock() {
+          if (pendingTxs.length === 0)
+            return log("Немає pending транзакцій", "err");
+          const block = Block.createBlock([...pendingTxs], bc.getLastHash());
+          const result = bc.validateBlock(block);
+          if (result.ok) {
+            log(
+              `Блок #${bc.blockHistory.length - 1} додано. ID: ${block.blockID.slice(0, 12)}...`,
+              "ok",
+            );
+            pendingTxs = [];
+          } else {
+            log("Блок відхилено: " + result.msg, "err");
+          }
+          this.render();
+        },
+
+        render() {
+          const names = Object.keys(accounts);
+
+          const accTbl = document.getElementById("accTable");
+          accTbl.innerHTML =
+            "<tr><th>Ім'я</th><th>ID (pubKey)</th><th>Баланс</th><th></th></tr>";
+          for (const name of names) {
+            const acc = accounts[name];
+            const tr = document.createElement("tr");
+            tr.innerHTML = `<td>${name}</td><td>${acc.accountID.slice(0, 16)}...</td><td>${acc.getBalance()}</td>
+        <td><button onclick="ui.faucet('${name}')">+100 faucet</button></td>`;
+            accTbl.appendChild(tr);
+          }
+
+          const fromSel = document.getElementById("txFrom");
+          const toSel = document.getElementById("txTo");
+          const prevFrom = fromSel.value,
+            prevTo = toSel.value;
+          fromSel.innerHTML = toSel.innerHTML =
+            '<option value="">— обрати —</option>';
+          for (const name of names) {
+            fromSel.innerHTML += `<option value="${name}">${name}</option>`;
+            toSel.innerHTML += `<option value="${name}">${name}</option>`;
+          }
+          if (names.includes(prevFrom)) fromSel.value = prevFrom;
+          if (names.includes(prevTo)) toSel.value = prevTo;
+
+          const ptbl = document.getElementById("pendingTable");
+          ptbl.innerHTML =
+            "<tr><th>TX ID</th><th>Від</th><th>Кому</th><th>Сума</th><th>Підпис</th></tr>";
+          for (const tx of pendingTxs) {
+            for (const op of tx.setOfOperations) {
+              const tr = document.createElement("tr");
+              tr.innerHTML = `<td>${tx.transactionID.slice(0, 12)}...</td><td>${op.sender.name}</td>
+          <td>${op.receiver.name}</td><td>${op.amount}</td><td>${op.signature.slice(0, 12)}...</td>`;
+              ptbl.appendChild(tr);
+            }
+          }
+
+          const chainDiv = document.getElementById("chain");
+          chainDiv.innerHTML = "";
+          for (let i = bc.blockHistory.length - 1; i >= 0; i--) {
+            const blk = bc.blockHistory[i];
+            const div = document.createElement("div");
+            div.className = "block";
+            let txHtml = "";
+            if (blk.setOfTransactions.length === 0) {
+              txHtml = "<i>Немає транзакцій (genesis)</i>";
+            } else {
+              for (const tx of blk.setOfTransactions) {
+                txHtml += `<div>TX: ${tx.transactionID.slice(0, 12)}... (nonce: ${tx.nonce})<ul>`;
+                for (const op of tx.setOfOperations) {
+                  txHtml += `<li>${op.sender.name} → ${op.receiver.name}: ${op.amount} монет</li>`;
+                }
+                txHtml += "</ul></div>";
+              }
+            }
+            div.innerHTML = `<div class="bhead">Блок #${i}</div>
+        <div class="bhash">ID: ${blk.blockID}</div>
+        <div class="bhash">prevHash: ${blk.prevHash}</div>
+        <details><summary>Транзакції (${blk.setOfTransactions.length})</summary>${txHtml}</details>`;
+            chainDiv.appendChild(div);
+          }
+        },
+      };
+
+      function log(msg, cls = "") {
+        const el = document.getElementById("log");
+        const line = document.createElement("div");
+        line.className = cls;
+        line.textContent = "[" + new Date().toLocaleTimeString() + "] " + msg;
+        el.appendChild(line);
+        el.scrollTop = el.scrollHeight;
+      }
+
+      log("Блокчейн ініціалізовано. Genesis блок створено.", "ok");
+      ui.render();
+    </script>
+  </body>
+</html>
