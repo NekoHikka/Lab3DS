@@ -434,10 +434,7 @@
           const acc = Account.genAccount(name);
           accounts[name] = acc;
           bc.coinDatabase[acc.accountID] = 0;
-          log(
-            `Акаунт створено: ${name} (${acc.accountID.slice(0, 12)}...)`,
-            "ok",
-          );
+          log(`Акаунт створено: ${name} (${acc.accountID})`, "ok");
           document.getElementById("accName").value = "";
           this.render();
         },
@@ -473,7 +470,7 @@
           const tx = Transaction.createTransaction([op], ++nonce);
           pendingTxs.push(tx);
           log(
-            `TX створено: ${fromName} → ${toName}, ${amount} монет. TX ID: ${tx.transactionID.slice(0, 12)}...`,
+            `TX створено: ${fromName} → ${toName}, ${amount} монет. TX ID: ${tx.transactionID}`,
             "inf",
           );
           this.render();
@@ -486,7 +483,7 @@
           const result = bc.validateBlock(block);
           if (result.ok) {
             log(
-              `Блок #${bc.blockHistory.length - 1} додано. ID: ${block.blockID.slice(0, 12)}...`,
+              `Блок #${bc.blockHistory.length - 1} додано. ID: ${block.blockID}`,
               "ok",
             );
             pendingTxs = [];
@@ -505,7 +502,7 @@
           for (const name of names) {
             const acc = accounts[name];
             const tr = document.createElement("tr");
-            tr.innerHTML = `<td>${name}</td><td>${acc.accountID.slice(0, 16)}...</td><td>${acc.getBalance()}</td>
+            tr.innerHTML = `<td>${name}</td><td>${acc.accountID}</td><td>${acc.getBalance()}</td>
         <td><button onclick="ui.faucet('${name}')">+100 faucet</button></td>`;
             accTbl.appendChild(tr);
           }
@@ -529,8 +526,8 @@
           for (const tx of pendingTxs) {
             for (const op of tx.setOfOperations) {
               const tr = document.createElement("tr");
-              tr.innerHTML = `<td>${tx.transactionID.slice(0, 12)}...</td><td>${op.sender.name}</td>
-          <td>${op.receiver.name}</td><td>${op.amount}</td><td>${op.signature.slice(0, 12)}...</td>`;
+              tr.innerHTML = `<td>${tx.transactionID}</td><td>${op.sender.name}</td>
+          <td>${op.receiver.name}</td><td>${op.amount}</td><td>${op.signature}</td>`;
               ptbl.appendChild(tr);
             }
           }
@@ -546,7 +543,7 @@
               txHtml = "<i>Немає транзакцій (genesis)</i>";
             } else {
               for (const tx of blk.setOfTransactions) {
-                txHtml += `<div>TX: ${tx.transactionID.slice(0, 12)}... (nonce: ${tx.nonce})<ul>`;
+                txHtml += `<div>TX: ${tx.transactionID} (nonce: ${tx.nonce})<ul>`;
                 for (const op of tx.setOfOperations) {
                   txHtml += `<li>${op.sender.name} → ${op.receiver.name}: ${op.amount} монет</li>`;
                 }
